@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Walk through a four-dimensional space and watch the 3D slices of shapes our brains cannot picture. One file, no images, no libraries: every pixel is computed live on your GPU.">
+<meta name="theme-color" content="#06070d">
+<title>4D World</title>
+<style>
+:root{--bg:#06070d;--fg:#eef0f7;--dim:#9297aa;--line:rgba(255,255,255,.13);--pad:16px;--gold:#ffc14d}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none;-webkit-tap-highlight-color:transparent}
+#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background:#06070d}
+#labels{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+.lab{position:absolute;left:0;top:0;transform:translate(-50%,-100%);text-align:center;white-space:nowrap;padding:5px 10px 6px;border-radius:10px;background:rgba(6,7,13,.58);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid var(--line);font-size:12px;line-height:1.3;will-change:transform,opacity}
+.lab b{display:block;font-weight:600;letter-spacing:.2px;font-size:13px}
+.lab small{color:var(--dim);font-size:11px}
+.lab.on{border-color:var(--c);box-shadow:0 0 18px -6px var(--c)}
+.lab.on b{color:var(--c)}
+#hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;padding:calc(var(--pad) + env(safe-area-inset-top)) var(--pad) calc(var(--pad) + env(safe-area-inset-bottom));gap:10px}
+.row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.card{pointer-events:auto;background:rgba(6,7,13,.56);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+#info{min-width:170px}
+#info h1{margin:0;font-size:12px;letter-spacing:.24em;font-weight:600;color:var(--dim)}
+#wread{font:600 26px/1.1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin:4px 0 2px;letter-spacing:.02em}
+#wread span{color:var(--dim);font-size:13px;font-weight:500;margin-right:6px;letter-spacing:.1em}
+#hint{color:var(--dim);font-size:12px;max-width:220px}
+#btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;pointer-events:auto}
+button{pointer-events:auto;font:inherit;color:var(--fg);background:rgba(6,7,13,.56);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:999px;padding:7px 12px;cursor:pointer;font-size:13px;line-height:1.2;transition:background .15s,border-color .15s}
+button:hover{background:rgba(255,255,255,.1)}
+button.on{border-color:var(--gold);color:var(--gold)}
+#bottom{display:flex;flex-direction:column;gap:10px;align-items:stretch}
+#chips{display:flex;gap:6px;overflow-x:auto;pointer-events:auto;padding:2px 2px 6px;scrollbar-width:none;-ms-overflow-style:none}
+#chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;border-radius:999px;padding:6px 11px;font-size:12px;border:1px solid var(--line);background:rgba(6,7,13,.56);display:flex;align-items:center;gap:7px;white-space:nowrap}
+.chip i{width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 8px var(--c);display:inline-block}
+.chip.on{border-color:var(--c)}
+#meterwrap{pointer-events:auto;position:relative;height:44px;border-radius:12px;background:rgba(6,7,13,.56);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line);overflow:hidden}
+#bands{position:absolute;left:0;right:0;top:0;bottom:0}
+.band{position:absolute;top:10px;height:24px;border-radius:5px;background:var(--c);opacity:.22;transition:opacity .25s}
+.band.on{opacity:.55}
+#ticks{position:absolute;left:0;right:0;bottom:0;height:100%;pointer-events:none}
+.tick{position:absolute;bottom:0;width:1px;height:8px;background:rgba(255,255,255,.25)}
+.tick.zero{height:100%;background:rgba(255,255,255,.18)}
+.tl{position:absolute;bottom:0;transform:translateX(-50%);font-size:10px;color:var(--dim);line-height:1;padding-bottom:9px}
+#marker{position:absolute;top:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 10px #fff;transform:translateX(-1px);pointer-events:none}
+#marker::after{content:"you";position:absolute;top:2px;left:5px;font-size:10px;color:#fff;letter-spacing:.1em}
+#wrange{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:ew-resize}
+#flat{position:fixed;left:var(--pad);bottom:calc(var(--pad) + 120px + env(safe-area-inset-bottom));width:280px;height:150px;border-radius:14px;border:1px solid var(--line);background:rgba(6,7,13,.56);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);pointer-events:none}
+#joy{position:fixed;left:var(--pad);bottom:calc(var(--pad) + 120px + env(safe-area-inset-bottom));width:120px;height:120px;border-radius:50%;border:1px solid var(--line);background:rgba(6,7,13,.4);display:none;pointer-events:auto}
+#joy i{position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.22);transform:translate(-50%,-50%);border:1px solid rgba(255,255,255,.35)}
+#rot{display:none;flex-direction:column;gap:6px;min-width:190px}
+#rot label{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim)}
+#rot label span{width:24px;font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--fg)}
+#rot input{flex:1;accent-color:var(--gold)}
+#rot.open{display:flex}
+#intro{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 40%,rgba(30,20,60,.75),rgba(6,7,13,.92));padding:var(--pad);pointer-events:auto;z-index:5;transition:opacity .5s}
+#intro.hide{opacity:0;pointer-events:none}
+.box{max-width:560px;width:100%;background:rgba(10,11,20,.78);border:1px solid var(--line);border-radius:22px;padding:28px 26px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 30px 80px -30px rgba(0,0,0,.9)}
+.box h2{margin:0 0 6px;font-size:34px;letter-spacing:-.01em;line-height:1.05}
+.box h2 em{font-style:normal;color:var(--gold)}
+.box p{margin:10px 0;color:#c9cddb;font-size:15px}
+.box .keys{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:13px;color:var(--dim);margin:14px 0 6px}
+.box .keys b{color:var(--fg);font-weight:600;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:rgba(255,255,255,.08);border:1px solid var(--line);border-radius:6px;padding:1px 7px;white-space:nowrap;justify-self:start}
+#enter{margin-top:14px;width:100%;padding:13px;font-size:16px;border-radius:14px;background:var(--gold);color:#1a1200;border-color:transparent;font-weight:600}
+#enter:hover{background:#ffd27a}
+.foot{margin-top:14px;font-size:12px;color:var(--dim);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+#check{color:#7fe3a1}
+#check.bad{color:#ff7b7b}
+#err{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:24px;background:var(--bg);z-index:9;text-align:center;color:var(--dim)}
+@media (max-width:720px){
+  #flat{display:none}
+  #info{min-width:0}
+  #wread{font-size:22px}
+  #hint{display:none}
+  .box h2{font-size:28px}
+  .box{padding:22px 18px}
+  .lab small{display:none}
+}
+@media (pointer:coarse){ #joy{display:block} #flat{display:none} }
+@media (prefers-reduced-motion:reduce){ #intro{transition:none} }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="labels"></div>
+<canvas id="flat" width="560" height="300"></canvas>
+<div id="joy"><i></i></div>
+
+<div id="hud">
+  <div class="row">
+    <div class="card" id="info">
+      <h1>4D WORLD</h1>
+      <div id="wread"><span>W</span>+0.00</div>
+      <div id="hint">Press Q / E (or scroll) to move along the 4th axis.</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+      <div id="btns">
+        <button id="bSpin" class="on" title="R">4D spin: on</button>
+        <button id="bRot" title="Rotate every shape in the 4D planes">Rotate 4D</button>
+        <button id="bSound">Sound: off</button>
+        <button id="bFlat">2D analogy</button>
+        <button id="bHelp" title="H">?</button>
+      </div>
+      <div class="card" id="rot">
+        <label>XW <input type="range" id="rxw" min="-180" max="180" value="0"><span id="vxw">0°</span></label>
+        <label>YW <input type="range" id="ryw" min="-180" max="180" value="0"><span id="vyw">0°</span></label>
+        <label>ZW <input type="range" id="rzw" min="-180" max="180" value="0"><span id="vzw">0°</span></label>
+        <button id="bReset" style="align-self:flex-start;padding:5px 10px;font-size:12px">Reset</button>
+      </div>
+    </div>
+  </div>
+  <div id="bottom">
+    <div id="chips"></div>
+    <div id="meterwrap">
+      <div id="bands"></div>
+      <div id="ticks"></div>
+      <div id="marker"></div>
+      <input id="wrange" type="range" min="-3" max="3" step="0.005" value="0" aria-label="Position on the W axis">
+    </div>
+  </div>
+</div>
+
+<div id="intro">
+  <div class="box">
+    <h2>You are a 3D being in a <em>4D</em> world.</h2>
+    <p>Our eyes only ever see one 3D slice of a 4-dimensional space. Move along the fourth axis, <b>W</b>, and watch solid shapes swell out of nothing, change form, and vanish. Every shape here is a real four-dimensional object, cut by the slice you stand in.</p>
+    <div class="keys" id="keysDesk">
+      <b>click</b><span>enter, mouse looks around</span>
+      <b>W A S D</b><span>walk</span>
+      <b>Q / E</b><span>move in W (or scroll the wheel)</span>
+      <b>Space / Shift</b><span>float up / down</span>
+      <b>1 – 8</b><span>teleport to a shape, with a trip in W</span>
+      <b>R</b><span>pause the 4D spin</span>
+    </div>
+    <div class="keys" id="keysTouch" style="display:none">
+      <b>drag</b><span>look around</span>
+      <b>joystick</b><span>walk</span>
+      <b>bar</b><span>drag the bottom bar to move in W</span>
+      <b>chips</b><span>tap a shape to travel to it</span>
+    </div>
+    <button id="enter">Enter the 4th dimension</button>
+    <div class="foot">
+      <span>One file. No images, no libraries. Everything is computed live by your GPU.</span>
+      <span id="check">checking the math…</span>
+    </div>
+  </div>
+</div>
+<div id="err"><div><b style="color:#fff">This page needs WebGL 2.</b><br>Try a current Chrome, Edge, Firefox or Safari.</div></div>
+
+<script>
+'use strict';
+// ============================================================
+//  4D WORLD · a single-file 4D ray-marcher
+//  Every shape is a true 4D signed-distance field. The scene you
+//  see is the 3D slice at w = uW of that 4D space.
+// ============================================================
+
+const $ = s => document.querySelector(s);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+
+// ---------- exhibits (kept in sync with the shader constants) ----------
+const RING = 6.0, OY = 2.5;
+const EX = [
+  { name:'Tesseract',      sub:'the 4D cube · cube → octahedron → hexagonal prism', wc: 0.0, rb:1.6,  col:[1.00,0.72,0.25], spin:'diag' },
+  { name:'Hypersphere',    sub:'the 4D ball · a sphere that grows and shrinks',    wc: 0.6, rb:1.0,  col:[0.25,0.65,1.00], spin:[] },
+  { name:'16-cell',        sub:'the 4D octahedron',                               wc:-0.7, rb:1.6,  col:[0.95,0.30,0.75], spin:[[2,3,0.30]] },
+  { name:'Spheritorus',    sub:'a 4D donut · a hollow ball one moment, a torus the next',         wc: 1.2, rb:1.25, col:[0.45,0.95,0.40], spin:[[0,3,0.25]] },
+  { name:'24-cell',        sub:'has no cousin in 3D at all',                      wc: 0.0, rb:1.56, col:[1.00,0.42,0.30], spin:[[0,3,0.20],[1,2,0.13]] },
+  { name:'Julia set',      sub:'a 4D fractal, the quaternion Julia set',          wc: 0.3, rb:1.35, col:[0.60,0.40,1.00], spin:[[0,3,0.15]] },
+  { name:'Torisphere',     sub:'a torus that fattens and thins',                  wc:-1.3, rb:1.18, col:[0.20,0.85,0.80], spin:[[2,3,0.30]] },
+  { name:'Tiger',          sub:'two donuts that merge into one',                  wc: 0.0, rb:1.21, col:[1.00,0.30,0.45], spin:[[0,3,0.30]] },
+];
+EX.forEach((e, i) => { const a = i * Math.PI / 4; e.pos = [RING * Math.sin(a), OY, RING * Math.cos(a)]; e.css = `rgb(${e.col.map(c => Math.round(c * 255)).join(',')})`; });
+
+// ---------- shaders ----------
+const VS = `#version 300 es
+void main(){ vec2 p = vec2((gl_VertexID<<1)&2, gl_VertexID&2)*2.0-1.0; gl_Position = vec4(p,0.0,1.0); }`;
+
+const FS = `#version 300 es
+precision highp float; precision highp int;
+out vec4 O;
+uniform vec2 uRes; uniform float uTime, uW, uQual; uniform int uShadows;
+uniform vec3 uCam; uniform mat3 uCamRot; uniform mat4 uRot[8];
+
+const float PI = 3.14159265;
+const float OY = ${OY.toFixed(2)};
+const vec3 LDIR = vec3(0.5535, 0.7547, -0.3522);
+const vec3 EP[8] = vec3[8](
+  vec3(0.0,OY,6.0), vec3(4.2426,OY,4.2426), vec3(6.0,OY,0.0), vec3(4.2426,OY,-4.2426),
+  vec3(0.0,OY,-6.0), vec3(-4.2426,OY,-4.2426), vec3(-6.0,OY,0.0), vec3(-4.2426,OY,4.2426));
+const float WC[8] = float[8](${EX.map(e => e.wc.toFixed(2)).join(',')});
+const float RB[8] = float[8](${EX.map(e => e.rb.toFixed(2)).join(',')});
+const vec3 COL[8] = vec3[8](${EX.map(e => `vec3(${e.col.map(c => c.toFixed(2)).join(',')})`).join(',')});
+
+// ---- 4D signed distance fields ----
+float sdTess(vec4 p, float b){ vec4 q = abs(p)-b; return length(max(q,0.0)) + min(max(max(q.x,q.y),max(q.z,q.w)),0.0); }
+float sdCell16(vec4 p, float r){ vec4 a = abs(p); return (a.x+a.y+a.z+a.w)*0.5 - r; }
+float sdCell24(vec4 p, float r){ vec4 a = abs(p);
+  float m = max(max(a.x+a.y, a.x+a.z), max(max(a.x+a.w, a.y+a.z), max(a.y+a.w, a.z+a.w)));
+  return m*0.70710678 - r; }
+float sdTiger(vec4 p){ vec2 q = vec2(length(p.xy)-0.75, length(p.zw)-0.5); return length(q)-0.22; }
+float sdSpheritorus(vec4 p){ return length(vec2(length(p.xyz)-0.9, p.w)) - 0.35; }
+float sdTorisphere(vec4 p){ return length(vec3(length(p.xy)-0.85, p.z, p.w)) - 0.33; }
+vec4 qmul(vec4 a, vec4 b){ return vec4(a.x*b.x - dot(a.yzw,b.yzw), a.x*b.yzw + b.x*a.yzw + cross(a.yzw,b.yzw)); }
+float sdJulia(vec4 z){
+  const vec4 c = vec4(-0.123, 0.745, 0.0, 0.0);   // Douady's rabbit, lifted to 4D
+  float md2 = 1.0, mz2 = dot(z,z);
+  for(int i=0;i<9;i++){ md2 *= 4.0*mz2; z = qmul(z,z) + c; mz2 = dot(z,z); if(mz2 > 1e3) break; }
+  return 0.25*sqrt(mz2/md2)*log(mz2);
+}
+
+float exhibit(int i, vec3 p){
+  vec3 d3 = p - EP[i];
+  float bnd = length(d3) - 1.7;
+  if(bnd > 0.3) return bnd;
+  vec4 q = uRot[i] * vec4(d3, uW - WC[i]);
+  if(i==0) return sdTess(q, 0.8);
+  if(i==1) return length(q) - 1.0;
+  if(i==2) return sdCell16(q, 0.8);
+  if(i==3) return sdSpheritorus(q);
+  if(i==4) return sdCell24(q, 1.1);
+  if(i==5){ float b2 = length(q) - 1.45; if(b2 > 0.2) return b2; return sdJulia(q/0.9)*0.9; }
+  if(i==6) return sdTorisphere(q);
+  return sdTiger(q);
+}
+
+vec2 map(vec3 p){
+  float d = p.y, id = 100.0;
+  for(int i=0;i<8;i++){
+    vec3 q = p - vec3(EP[i].x, 0.0, EP[i].z);
+    vec2 c = vec2(length(q.xz)-0.46, abs(q.y-0.4)-0.36);
+    float ped = min(max(c.x,c.y),0.0) + length(max(c,0.0)) - 0.04;
+    if(ped < d){ d = ped; id = 200.0 + float(i); }
+    float e = exhibit(i, p);
+    if(e < d){ d = e; id = float(i); }
+  }
+  return vec2(d, id);
+}
+
+vec2 march(vec3 ro, vec3 rd){
+  float t = 0.02, id = -1.0;
+  int steps = int(mix(90.0, 190.0, uQual));
+  for(int i=0;i<190;i++){
+    if(i >= steps) break;
+    vec3 p = ro + rd*t; vec2 h = map(p);
+    if(h.x < 0.0006*t){ id = h.y; break; }
+    t += h.x*0.8;
+    if(t > 60.0) break;
+  }
+  if(t > 60.0) id = -1.0;
+  return vec2(t, id);
+}
+vec3 calcN(vec3 p, float t){
+  float h = 0.0004*t + 0.0003; vec2 k = vec2(1.0,-1.0);
+  return normalize(k.xyy*map(p+k.xyy*h).x + k.yyx*map(p+k.yyx*h).x + k.yxy*map(p+k.yxy*h).x + k.xxx*map(p+k.xxx*h).x);
+}
+float shadow(vec3 ro, vec3 rd){
+  float res = 1.0, t = 0.04;
+  for(int i=0;i<40;i++){ float h = map(ro+rd*t).x; res = min(res, 9.0*h/t); if(res < 0.01 || t > 22.0) break; t += clamp(h, 0.02, 0.6); }
+  return clamp(res, 0.0, 1.0);
+}
+float ao(vec3 p, vec3 n){
+  float occ = 0.0, sca = 1.0;
+  for(int i=0;i<5;i++){ float h = 0.02 + 0.11*float(i); float d = map(p+n*h).x; occ += (h-d)*sca; sca *= 0.8; }
+  return clamp(1.0 - 2.2*occ, 0.0, 1.0);
+}
+float hash(vec3 p){ p = fract(p*0.3183099 + vec3(0.1,0.2,0.3)); p *= 17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+vec3 sky(vec3 rd){
+  float h = clamp(rd.y, -1.0, 1.0);
+  vec3 c = mix(vec3(0.17,0.12,0.27), vec3(0.015,0.02,0.07), smoothstep(-0.1, 0.55, h));
+  c += vec3(0.38,0.17,0.30)*exp(-abs(h)*7.0)*0.55;
+  float s = max(dot(rd, LDIR), 0.0);
+  c += vec3(1.0,0.82,0.6)*(pow(s,700.0)*2.5 + pow(s,6.0)*0.07);
+  if(rd.y > 0.0){
+    vec3 cell = floor(rd*260.0); float hs = hash(cell);
+    float st = smoothstep(0.994, 1.0, hs);
+    c += st*vec3(0.8,0.9,1.0)*(0.55+0.45*sin(uTime*2.0 + hs*60.0))*smoothstep(0.0,0.15,rd.y);
+  }
+  return c;
+}
+
+vec3 shade(vec3 ro, vec3 rd, float t, float id){
+  vec3 p = ro + rd*t; vec3 n = calcN(p, t);
+  vec3 alb, emis = vec3(0.0); float gloss;
+  if(id >= 200.0){ alb = vec3(0.30,0.30,0.35); gloss = 0.35; }
+  else if(id >= 100.0){
+    // the floor is a 3D hyperplane of the 4D world: its pattern breathes as you move in W
+    float ch = cos(PI*(floor(p.x)+floor(p.z)))*cos(PI*uW);
+    alb = vec3(0.11,0.12,0.165) + 0.045*ch;
+    vec2 g = abs(fract(p.xz)-0.5); float line = smoothstep(0.455, 0.5, max(g.x,g.y));
+    alb += line*vec3(0.04,0.06,0.11);
+    for(int i=0;i<8;i++){
+      float r = length(p.xz - EP[i].xz);
+      float ring = smoothstep(0.12, 0.0, abs(r-0.78));
+      float near = clamp(1.0 - abs(uW-WC[i])/RB[i], 0.0, 1.0);
+      emis += ring*near*COL[i]*0.9;
+    }
+    gloss = 0.5;
+  } else { int i = int(id+0.5); alb = COL[i]; gloss = 1.0; }
+  float sh = (uShadows == 1) ? shadow(p + n*0.02, LDIR) : 1.0;
+  float dif = max(dot(n, LDIR), 0.0)*sh;
+  float occ = ao(p, n);
+  vec3 skyA = mix(vec3(0.10,0.09,0.17), vec3(0.24,0.27,0.42), 0.5+0.5*n.y)*occ;
+  vec3 col = alb*(dif*vec3(1.25,1.1,0.95)*1.5 + skyA);
+  vec3 hv = normalize(LDIR - rd); float fres = pow(1.0 - max(dot(n,-rd),0.0), 4.0);
+  col += pow(max(dot(n,hv),0.0), 60.0)*dif*(0.25+0.75*fres)*gloss*vec3(1.0,0.95,0.9)*1.3;
+  if(id < 8.0){ col += sky(reflect(rd,n))*fres*0.7*occ; col += alb*0.07; }
+  col += emis;
+  return col;
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy*2.0 - uRes)/uRes.y;
+  vec3 rd = normalize(uCamRot*vec3(uv, 1.4));
+  vec3 ro = uCam;
+  vec2 h = march(ro, rd);
+  vec3 col;
+  if(h.y < 0.0) col = sky(rd);
+  else {
+    col = shade(ro, rd, h.x, h.y);
+    float fog = 1.0 - exp(-h.x*h.x*0.0011);
+    col = mix(col, sky(rd)*0.9 + vec3(0.05,0.03,0.07), fog);
+  }
+  col = 1.0 - exp(-col*1.1);
+  col = pow(col, vec3(0.4545));
+  vec2 q = gl_FragCoord.xy/uRes; col *= 0.78 + 0.22*pow(16.0*q.x*q.y*(1.0-q.x)*(1.0-q.y), 0.22);
+  O = vec4(col, 1.0);
+}`;
+
+// ---------- WebGL setup ----------
+const canvas = $('#gl');
+const gl = canvas.getContext('webgl2', { antialias:false, alpha:false, depth:false, stencil:false, powerPreference:'high-performance' });
+if(!gl){ $('#err').style.display = 'flex'; throw new Error('WebGL2 unavailable'); }
+function compile(type, src){
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){ const log = gl.getShaderInfoLog(s); console.error(log); $('#err').style.display='flex'; $('#err').innerHTML = '<pre style="text-align:left;white-space:pre-wrap;color:#ff9">'+log.replace(/</g,'&lt;')+'</pre>'; throw new Error(log); }
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
+if(!gl.getProgramParameter(prog, gl.LINK_STATUS)){ console.error(gl.getProgramInfoLog(prog)); throw new Error('link'); }
+gl.useProgram(prog);
+const U = {}; for(const n of ['uRes','uTime','uW','uQual','uShadows','uCam','uCamRot','uRot']) U[n] = gl.getUniformLocation(prog, n);
+
+// ---------- 4D rotation matrices (column-major, GL style) ----------
+function ident(){ const m = new Float32Array(16); m[0]=m[5]=m[10]=m[15]=1; return m; }
+function rotPlane(i, j, a){ const m = ident(), c = Math.cos(a), s = Math.sin(a); m[i*4+i]=c; m[j*4+j]=c; m[j*4+i]=-s; m[i*4+j]=s; return m; }
+function mul(A, B){ const C = new Float32Array(16); for(let c=0;c<4;c++) for(let r=0;r<4;r++){ let v=0; for(let k=0;k<4;k++) v += A[k*4+r]*B[c*4+k]; C[c*4+r]=v; } return C; }
+function transpose(M){ const T = new Float32Array(16); for(let c=0;c<4;c++) for(let r=0;r<4;r++) T[c*4+r] = M[r*4+c]; return T; }
+const rotBuf = new Float32Array(128);
+// D turns the cube's space diagonal (1,1,1) onto the x axis; the tesseract then spins in the plane
+// spanned by that diagonal and W. At 60° its slice is a regular octahedron, at 90° a hexagonal prism.
+const DIAG = mul(rotPlane(0,2,-0.6154797), rotPlane(0,1,-Math.PI/4)), DIAG_T = transpose(DIAG);
+
+// ---------- state ----------
+const S = { pos:[0,1.6,-0.6], yaw:0, pitch:0.1, w:0, wTarget:null, spin:true, spinT:0.6, sound:false, man:{xw:0,yw:0,zw:0}, keys:{}, entered:false, movedW:false, tips:0 };
+const joy = { x:0, y:0, id:null, cx:0, cy:0 };
+const isTouch = matchMedia('(pointer:coarse)').matches;
+if(isTouch){ $('#keysDesk').style.display='none'; $('#keysTouch').style.display='grid'; }
+
+// ---------- HUD build ----------
+const labels = EX.map((e, i) => { const d = document.createElement('div'); d.className='lab'; d.style.setProperty('--c', e.css); d.innerHTML = `<b>${e.name}</b><small></small>`; $('#labels').appendChild(d); return d; });
+const chips = EX.map((e, i) => { const b = document.createElement('button'); b.className='chip'; b.style.setProperty('--c', e.css); b.innerHTML = `<i></i>${i+1} · ${e.name}`; b.title = `Travel to the ${e.name} (key ${i+1})`; b.onclick = () => teleport(i); $('#chips').appendChild(b); return b; });
+const bands = EX.map((e, i) => { const d = document.createElement('div'); d.className='band'; d.style.setProperty('--c', e.css); const l = (e.wc - e.rb + 3)/6*100, r = (e.wc + e.rb + 3)/6*100; d.style.left = l+'%'; d.style.width = (r-l)+'%'; d.style.top = (6 + (i%4)*8)+'px'; d.style.height = '7px'; $('#bands').appendChild(d); return d; });
+for(let w=-3; w<=3; w++){ const t = document.createElement('div'); t.className = 'tick'+(w===0?' zero':''); t.style.left = ((w+3)/6*100)+'%'; $('#ticks').appendChild(t); const l = document.createElement('div'); l.className='tl'; l.style.left = ((w+3)/6*100)+'%'; l.textContent = (w>0?'+':'')+w; $('#ticks').appendChild(l); }
+const wrange = $('#wrange'), marker = $('#marker'), wread = $('#wread'), hint = $('#hint');
+wrange.addEventListener('input', () => { S.w = +wrange.value; S.wTarget = null; S.movedW = true; });
+
+function teleport(i){
+  const e = EX[i]; const a = Math.atan2(e.pos[0], e.pos[2]);
+  const r = RING - 4.4; S.pos = [r*Math.sin(a), 1.6, r*Math.cos(a)];
+  const dx = e.pos[0]-S.pos[0], dy = e.pos[1]-S.pos[1], dz = e.pos[2]-S.pos[2];
+  S.yaw = Math.atan2(dx, dz); S.pitch = Math.atan2(dy, Math.hypot(dx,dz));
+  S.wTarget = e.wc; S.movedW = true;
+}
+
+// ---------- controls ----------
+addEventListener('keydown', e => {
+  if(e.target.tagName === 'INPUT') return;
+  S.keys[e.code] = true;
+  if(e.code === 'Space') e.preventDefault();
+  if(e.code === 'KeyR') toggleSpin();
+  if(e.code === 'KeyM') toggleSound();
+  if(e.code === 'KeyH') showIntro();
+  if(/^Digit[1-8]$/.test(e.code)) teleport(+e.code.slice(5)-1);
+});
+addEventListener('keyup', e => { S.keys[e.code] = false; });
+addEventListener('blur', () => { S.keys = {}; });
+addEventListener('wheel', e => { if(!S.entered) return; S.w = clamp(S.w + e.deltaY*0.0012, -3, 3); S.wTarget = null; S.movedW = true; }, { passive:true });
+
+let dragging = false, lx = 0, ly = 0;
+function lockPointer(){ if(isTouch || !canvas.requestPointerLock || document.pointerLockElement === canvas) return; try{ const p = canvas.requestPointerLock(); if(p && p.catch) p.catch(() => {}); } catch(e){} }
+canvas.addEventListener('mousedown', e => { if(!S.entered) return; lockPointer(); dragging = true; lx = e.clientX; ly = e.clientY; });
+addEventListener('mouseup', () => dragging = false);
+addEventListener('mousemove', e => {
+  if(!S.entered) return;
+  if(document.pointerLockElement === canvas){ look(e.movementX, e.movementY); }
+  else if(dragging){ look(e.clientX-lx, e.clientY-ly); lx = e.clientX; ly = e.clientY; }
+});
+function look(dx, dy){ S.yaw += dx*0.0022; S.pitch = clamp(S.pitch - dy*0.0022, -1.45, 1.45); }
+
+// touch: joystick zone walks, anywhere else looks
+const joyEl = $('#joy'); let lookId = null;
+addEventListener('touchstart', e => {
+  if(!S.entered) return;
+  for(const t of e.changedTouches){
+    const el = document.elementFromPoint(t.clientX, t.clientY);
+    if(el && el.closest('#hud,#intro')) continue;
+    if(joyEl.contains(el) && joy.id === null){ joy.id = t.identifier; const r = joyEl.getBoundingClientRect(); joy.cx = r.left + r.width/2; joy.cy = r.top + r.height/2; moveJoy(t); }
+    else if(lookId === null){ lookId = t.identifier; lx = t.clientX; ly = t.clientY; }
+  }
+}, { passive:true });
+addEventListener('touchmove', e => {
+  for(const t of e.changedTouches){
+    if(t.identifier === joy.id) moveJoy(t);
+    else if(t.identifier === lookId){ look((t.clientX-lx)*1.4, (t.clientY-ly)*1.4); lx = t.clientX; ly = t.clientY; }
+  }
+}, { passive:true });
+function endTouch(e){ for(const t of e.changedTouches){ if(t.identifier === joy.id){ joy.id = null; joy.x = joy.y = 0; joyEl.firstElementChild.style.transform = 'translate(-50%,-50%)'; } if(t.identifier === lookId) lookId = null; } }
+addEventListener('touchend', endTouch); addEventListener('touchcancel', endTouch);
+function moveJoy(t){ let dx = t.clientX-joy.cx, dy = t.clientY-joy.cy; const l = Math.hypot(dx,dy), m = 44; if(l > m){ dx *= m/l; dy *= m/l; } joy.x = dx/m; joy.y = -dy/m; joyEl.firstElementChild.style.transform = `translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px))`; }
+
+// buttons
+function toggleSpin(){ S.spin = !S.spin; $('#bSpin').textContent = '4D spin: ' + (S.spin ? 'on' : 'off'); $('#bSpin').classList.toggle('on', S.spin); }
+$('#bSpin').onclick = toggleSpin;
+$('#bRot').onclick = () => { $('#rot').classList.toggle('open'); $('#bRot').classList.toggle('on'); };
+for(const k of ['xw','yw','zw']){ const inp = $('#r'+k), out = $('#v'+k); inp.addEventListener('input', () => { S.man[k] = inp.value*Math.PI/180; out.textContent = inp.value+'°'; }); }
+$('#bReset').onclick = () => { for(const k of ['xw','yw','zw']){ S.man[k] = 0; $('#r'+k).value = 0; $('#v'+k).textContent = '0°'; } };
+$('#bFlat').onclick = () => { const f = $('#flat'); const show = f.style.display !== 'block'; f.style.display = show ? 'block' : 'none'; $('#bFlat').classList.toggle('on', show); };
+$('#bHelp').onclick = showIntro;
+function showIntro(){ $('#intro').classList.remove('hide'); $('#enter').textContent = 'Back to the 4D world'; if(document.exitPointerLock) document.exitPointerLock(); }
+$('#enter').onclick = () => {
+  $('#intro').classList.add('hide');
+  if(!S.entered){ S.entered = true; if(!S.sound) toggleSound(); }
+  lockPointer();
+};
+
+// ---------- sound: a drone that follows W, a chime when a shape enters your slice ----------
+let AC = null, master = null, osc1 = null, osc2 = null;
+function initAudio(){
+  AC = new (window.AudioContext || window.webkitAudioContext)();
+  master = AC.createGain(); master.gain.value = 0; master.connect(AC.destination);
+  const filt = AC.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 520; filt.Q.value = 0.7; filt.connect(master);
+  osc1 = AC.createOscillator(); osc1.type = 'sine'; osc1.connect(filt);
+  osc2 = AC.createOscillator(); osc2.type = 'triangle'; const g2 = AC.createGain(); g2.gain.value = 0.22; osc2.connect(g2); g2.connect(filt);
+  osc1.start(); osc2.start();
+}
+function toggleSound(){
+  S.sound = !S.sound;
+  if(S.sound && !AC){ try{ initAudio(); } catch(e){ S.sound = false; } }
+  if(AC){ if(AC.state === 'suspended') AC.resume(); master.gain.setTargetAtTime(S.sound ? 0.06 : 0, AC.currentTime, 0.2); }
+  $('#bSound').textContent = 'Sound: ' + (S.sound ? 'on' : 'off'); $('#bSound').classList.toggle('on', S.sound);
+}
+function ping(i, on){
+  if(!AC || !S.sound) return;
+  const o = AC.createOscillator(), g = AC.createGain(); o.type = 'sine';
+  const f = 330*Math.pow(2, i/8)*(on ? 1 : 0.5);
+  o.frequency.setValueAtTime(f, AC.currentTime); o.frequency.exponentialRampToValueAtTime(f*(on ? 1.5 : 0.75), AC.currentTime + 0.25);
+  g.gain.setValueAtTime(0.0001, AC.currentTime); g.gain.exponentialRampToValueAtTime(0.12, AC.currentTime + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + 0.9);
+  o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + 1.0);
+}
+const inRange = EX.map(() => false);
+
+// ---------- flatland panel: one dimension down ----------
+const flat = $('#flat'), fg = flat.getContext('2d');
+function drawFlat(t){
+  if(flat.style.display === 'none' || (!flat.style.display && getComputedStyle(flat).display === 'none')) return;
+  const W = flat.width, H = flat.height; fg.clearRect(0,0,W,H);
+  const s = W/560; fg.save(); fg.scale(s, s);
+  const tilt = 0.615, yaw = t*0.3 + 0.785;
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), ct = Math.cos(tilt), st = Math.sin(tilt);
+  const V = []; for(let i=0;i<8;i++){ let x = (i&1?0.5:-0.5), y = (i&2?0.5:-0.5), z = (i&4?0.5:-0.5);
+    let x1 = x*cy + z*sy, z1 = -x*sy + z*cy; let y1 = y*ct - z1*st, z2 = y*st + z1*ct; V.push([x1, y1, z2]); }
+  const E = [[0,1],[2,3],[4,5],[6,7],[0,2],[1,3],[4,6],[5,7],[0,4],[1,5],[2,6],[3,7]];
+  const h = clamp(S.w, -1.2, 1.2);
+  const pts = []; for(const [a,b] of E){ const A = V[a], B = V[b]; if((A[1]-h)*(B[1]-h) < 0){ const k = (h-A[1])/(B[1]-A[1]); pts.push([A[0]+(B[0]-A[0])*k, h, A[2]+(B[2]-A[2])*k]); } }
+  if(pts.length){ const cx = pts.reduce((a,p)=>a+p[0],0)/pts.length, cz = pts.reduce((a,p)=>a+p[2],0)/pts.length; pts.sort((p,q) => Math.atan2(p[2]-cz, p[0]-cx) - Math.atan2(q[2]-cz, q[0]-cx)); }
+  // left: the 3D scene seen from the side
+  const P = (p) => [150 + (p[0] + 0.35*p[2])*95, 160 - (p[1] - 0.18*p[2])*95];
+  fg.font = '600 13px system-ui, sans-serif'; fg.fillStyle = '#9297aa'; fg.textAlign = 'left';
+  fg.fillText('One dimension down: a cube crossing Flatland', 14, 24);
+  fg.font = '12px system-ui, sans-serif';
+  fg.fillText('the plane is at W = ' + (h>=0?'+':'') + h.toFixed(2), 14, 42);
+  // plane
+  fg.fillStyle = 'rgba(120,160,255,0.12)'; fg.strokeStyle = 'rgba(120,160,255,0.5)'; fg.lineWidth = 1;
+  fg.beginPath(); for(const [i,c] of [[-1,-1],[1,-1],[1,1],[-1,1]].entries()){ const p = P([c[0]*1.05, h, c[1]*1.05]); i ? fg.lineTo(p[0],p[1]) : fg.moveTo(p[0],p[1]); } fg.closePath(); fg.fill(); fg.stroke();
+  fg.strokeStyle = 'rgba(255,255,255,0.55)'; fg.lineWidth = 1.2; fg.beginPath(); for(const [a,b] of E){ const A = P(V[a]), B = P(V[b]); fg.moveTo(A[0],A[1]); fg.lineTo(B[0],B[1]); } fg.stroke();
+  if(pts.length){ fg.strokeStyle = '#ffc14d'; fg.lineWidth = 2.5; fg.beginPath(); pts.forEach((p,i) => { const q = P(p); i ? fg.lineTo(q[0],q[1]) : fg.moveTo(q[0],q[1]); }); fg.closePath(); fg.stroke(); }
+  // right: what the 2D being sees
+  fg.fillStyle = '#9297aa'; fg.textAlign = 'center'; fg.fillText('what the 2D being sees', 430, 42);
+  fg.strokeStyle = 'rgba(255,255,255,0.15)'; fg.lineWidth = 1; fg.beginPath(); fg.arc(430, 165, 95, 0, Math.PI*2); fg.stroke();
+  if(pts.length){ fg.fillStyle = 'rgba(255,193,77,0.85)'; fg.beginPath(); pts.forEach((p,i) => { const x = 430 + p[0]*95, y = 165 + p[2]*95; i ? fg.lineTo(x,y) : fg.moveTo(x,y); }); fg.closePath(); fg.fill();
+    fg.fillStyle = '#eef0f7'; fg.fillText(pts.length + ' sides', 430, 280); }
+  else { fg.fillStyle = '#9297aa'; fg.fillText('nothing: the cube is not in its world now', 430, 170); }
+  fg.restore();
+}
+
+// ---------- the math check (same formulas as the shader, run in JS) ----------
+function mathCheck(){
+  const sdTess = (p, b) => { const q = p.map(v => Math.abs(v) - b); const o = Math.hypot(...q.map(v => Math.max(v,0))); return o + Math.min(Math.max(...q), 0); };
+  const sdTiger = (p) => Math.hypot(Math.hypot(p[0],p[1]) - 0.75, Math.hypot(p[2],p[3]) - 0.5) - 0.22;
+  const ok = [];
+  // 1. a hypersphere of radius 1 sliced at w = 0.6 is a sphere of radius 0.8 (3-4-5)
+  ok.push(Math.abs(Math.hypot(0.8, 0, 0, 0.6) - 1) < 1e-9);
+  // 2. turn the tesseract so its long diagonal (1,1,1,1) points along W: the slice at w=0 is an octahedron
+  //    whose 6 vertices are the permutations of (1,1,-1,-1), all at distance 2, pairwise orthogonal.
+  const u = [0.5,0.5,0.5,0.5], ew = [0,0,0,1], v = u.map((x,i) => x - ew[i]), vv = v.reduce((a,x) => a + x*x, 0);
+  const H = (p) => { const d = p.reduce((a,x,i) => a + x*v[i], 0); return p.map((x,i) => x - 2*v[i]*d/vv); };   // reflection taking u -> ew
+  const verts = [[1,1,-1,-1],[1,-1,1,-1],[1,-1,-1,1],[-1,1,1,-1],[-1,1,-1,1],[-1,-1,1,1]];
+  let t2 = true;
+  for(const q of verts){ const p = H(q); if(Math.abs(p[3]) > 1e-9) t2 = false;                      // lies in the slice
+    if(Math.abs(Math.hypot(...p) - 2) > 1e-9) t2 = false;                                           // distance 2
+    if(Math.abs(sdTess(H(p), 1)) > 1e-9) t2 = false;                                                // on the surface
+    if(sdTess(H(p.map(x => x*1.05)), 1) <= 0) t2 = false; if(sdTess(H(p.map(x => x*0.95)), 1) >= 0) t2 = false; }
+  for(let i=0;i<6;i++) for(let j=i+1;j<6;j++){ const d = verts[i].reduce((a,x,k) => a + x*verts[j][k], 0); if(d !== 0 && d !== -4) t2 = false; }
+  ok.push(t2);
+  // 3. the tiger at w=0 is two separate tori (gap between them), at w=0.5 they have merged
+  ok.push(sdTiger([0.75,0,0.5,0]) < 0 && sdTiger([0.75,0,0,0]) > 0 && sdTiger([0.75,0,0,0.5]) < 0);
+  const el = $('#check'); const n = ok.filter(Boolean).length;
+  el.textContent = n === ok.length ? 'math check passed · hypersphere ✓ tesseract→octahedron ✓ tiger ✓' : 'math check failed: ' + ok.map((o,i) => (o?'✓':'✗')).join(' ');
+  el.classList.toggle('bad', n !== ok.length);
+  console.log('[4D World] math check', ok);
+}
+mathCheck();
+
+// ---------- frame loop ----------
+let scale = isTouch ? 0.6 : 0.85, dpr = 1, ema = 16, frames = 0;
+const camMat = new Float32Array(9);
+function resize(){
+  dpr = Math.min(devicePixelRatio || 1, 1.5);
+  const w = Math.max(2, Math.round(innerWidth*dpr*scale)), h = Math.max(2, Math.round(innerHeight*dpr*scale));
+  if(canvas.width !== w || canvas.height !== h){ canvas.width = w; canvas.height = h; }
+}
+addEventListener('resize', resize);
+
+function update(dt){
+  const k = S.keys, sp = 3.2*dt;
+  const fx = Math.sin(S.yaw), fz = Math.cos(S.yaw), rx = Math.cos(S.yaw), rz = -Math.sin(S.yaw);
+  let mx = joy.x, mz = joy.y;
+  if(k.KeyW || k.ArrowUp) mz += 1; if(k.KeyS || k.ArrowDown) mz -= 1; if(k.KeyD || k.ArrowRight) mx += 1; if(k.KeyA || k.ArrowLeft) mx -= 1;
+  const l = Math.hypot(mx, mz); if(l > 1){ mx /= l; mz /= l; }
+  S.pos[0] += (fx*mz + rx*mx)*sp; S.pos[2] += (fz*mz + rz*mx)*sp;
+  if(k.Space) S.pos[1] += sp; if(k.ShiftLeft || k.ShiftRight) S.pos[1] -= sp;
+  let dw = 0; if(k.KeyE) dw += 1; if(k.KeyQ) dw -= 1;
+  if(dw){ S.w += dw*0.6*dt; S.wTarget = null; S.movedW = true; }
+  if(S.wTarget !== null){ const d = S.wTarget - S.w, step = 0.9*dt; if(Math.abs(d) <= step){ S.w = S.wTarget; S.wTarget = null; } else S.w += Math.sign(d)*step; }
+  S.w = clamp(S.w, -3, 3);
+  S.pos[1] = clamp(S.pos[1], 0.35, 7);
+  const rr = Math.hypot(S.pos[0], S.pos[2]); if(rr > 13){ S.pos[0] *= 13/rr; S.pos[2] *= 13/rr; }
+  for(const e of EX){ const dx = S.pos[0]-e.pos[0], dz = S.pos[2]-e.pos[2], d = Math.hypot(dx, dz); if(d < 0.95 && d > 1e-6){ S.pos[0] = e.pos[0] + dx/d*0.95; S.pos[2] = e.pos[2] + dz/d*0.95; } }
+  if(S.spin) S.spinT += dt;
+  // 4D rotations: manual planes, then each shape's own spin
+  const manM = mul(mul(rotPlane(0,3,S.man.xw), rotPlane(1,3,S.man.yw)), rotPlane(2,3,S.man.zw));
+  EX.forEach((e, i) => {
+    let M = manM;
+    if(e.spin === 'diag') M = mul(mul(mul(M, DIAG_T), rotPlane(0, 3, S.spinT*0.3)), DIAG);
+    else for(const [a,b,s] of e.spin) M = mul(M, rotPlane(a, b, S.spinT*s));
+    rotBuf.set(M, i*16);
+  });
+  // camera basis
+  const cp = Math.cos(S.pitch), spt = Math.sin(S.pitch);
+  const f = [cp*fx, spt, cp*fz], r = [rx, 0, rz], up = [f[1]*r[2]-f[2]*r[1], f[2]*r[0]-f[0]*r[2], f[0]*r[1]-f[1]*r[0]];
+  camMat.set(r, 0); camMat.set(up, 3); camMat.set(f, 6);
+  // range events
+  EX.forEach((e, i) => { const now = Math.abs(S.w - e.wc) < e.rb; if(now !== inRange[i]){ inRange[i] = now; if(S.entered) ping(i, now); } });
+  if(AC && S.sound){ const fr = 110*Math.pow(2, S.w/3); osc1.frequency.setTargetAtTime(fr, AC.currentTime, 0.08); osc2.frequency.setTargetAtTime(fr*1.498, AC.currentTime, 0.08); }
+}
+
+function hud(){
+  wread.innerHTML = '<span>W</span>' + (S.w >= 0 ? '+' : '−') + Math.abs(S.w).toFixed(2);
+  if(S.wTarget === null) wrange.value = S.w;
+  marker.style.left = ((S.w+3)/6*100) + '%';
+  bands.forEach((b, i) => b.classList.toggle('on', inRange[i]));
+  chips.forEach((c, i) => c.classList.toggle('on', inRange[i]));
+  // labels above each pedestal
+  const aspect = innerWidth/innerHeight, focal = 1.4;
+  EX.forEach((e, i) => {
+    const rel = [e.pos[0]-S.pos[0], e.pos[1]+1.7-S.pos[1], e.pos[2]-S.pos[2]];
+    const x = rel[0]*camMat[0] + rel[1]*camMat[1] + rel[2]*camMat[2];
+    const y = rel[0]*camMat[3] + rel[1]*camMat[4] + rel[2]*camMat[5];
+    const z = rel[0]*camMat[6] + rel[1]*camMat[7] + rel[2]*camMat[8];
+    const el = labels[i];
+    if(z < 0.5){ el.style.opacity = 0; return; }
+    const sx = (x/z*focal/aspect*0.5 + 0.5)*innerWidth, sy = (1 - (y/z*focal*0.5 + 0.5))*innerHeight;
+    const dist = Math.hypot(...rel);
+    el.style.opacity = clamp(1.6 - dist/12, 0.15, 1) * (sx < -60 || sx > innerWidth+60 ? 0 : 1);
+    el.style.transform = `translate(${sx.toFixed(1)}px,${sy.toFixed(1)}px) translate(-50%,-100%) scale(${clamp(1.15 - dist/18, 0.7, 1).toFixed(3)})`;
+    el.classList.toggle('on', inRange[i]);
+    const dwc = e.wc - S.w;
+    el.lastElementChild.textContent = inRange[i] ? e.sub : `not in your slice · go to W ${dwc > 0 ? '+' : '−'}${Math.abs(dwc).toFixed(1)}`;
+  });
+  if(!isTouch){
+    const tips = ['Press Q / E (or scroll) to move along the 4th axis.', 'The floor pattern breathes as W changes: it is a 3D plane inside a 4D space.', 'Press R to pause the 4D spin. A 4D rotation changes the shape of a slice, not just its angle.', 'Dim labels mean the shape exists, but not in your slice. Press its number to travel there.'];
+    const idx = !S.movedW ? 0 : Math.min(3, 1 + Math.floor(S.spinT/14) % 3);
+    if(idx !== S.tips){ S.tips = idx; hint.textContent = tips[idx]; }
+  }
+}
+
+let last = performance.now(), running = true;
+function frame(now){
+  if(!running) return;
+  const dt = Math.min(0.05, (now-last)/1000); last = now;
+  // adaptive resolution: aim for a smooth frame
+  ema = ema*0.9 + Math.min(100, now - (frame.prev || now))*0.1; frame.prev = now;
+  if(++frames % 30 === 0){ if(ema > 24 && scale > 0.38){ scale = Math.max(0.38, scale - 0.07); resize(); } else if(ema < 13 && scale < 1){ scale = Math.min(1, scale + 0.05); resize(); } }
+  update(dt);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.uniform2f(U.uRes, canvas.width, canvas.height); gl.uniform1f(U.uTime, now/1000); gl.uniform1f(U.uW, S.w); gl.uniform1f(U.uQual, scale);
+  gl.uniform1i(U.uShadows, scale > 0.5 ? 1 : 0);
+  gl.uniform3fv(U.uCam, S.pos); gl.uniformMatrix3fv(U.uCamRot, false, camMat); gl.uniformMatrix4fv(U.uRot, false, rotBuf);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  hud(); drawFlat(S.spinT);
+  requestAnimationFrame(frame);
+}
+document.addEventListener('visibilitychange', () => { running = !document.hidden; if(running){ last = performance.now(); frame.prev = last; requestAnimationFrame(frame); } });
+resize(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>
